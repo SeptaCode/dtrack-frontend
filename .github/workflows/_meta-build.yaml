@@ -96,19 +96,18 @@ jobs:
           fi
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
-
       - name: Build multi-arch Container Image with explicit builder
         run: |
           docker buildx create --name dbuilder --driver docker-container --use --bootstrap
-          
+
           TAGS="${{ steps.tags.outputs.tags }}"
           TAG_LIST="${TAGS//,/ }"
-          
+
           TAG_ARGS=""
           for tag in $TAG_LIST; do
             TAG_ARGS="$TAG_ARGS --tag $tag"
           done
-          
+
           docker buildx build \
             --builder dbuilder \
             --build-arg APP_VERSION=${{ inputs.app-version }} \
