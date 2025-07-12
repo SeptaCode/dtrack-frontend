@@ -16,6 +16,8 @@ on:
         required: true
         description: 'Short ref name of the branch or tag that triggered the workflow run'
     secrets:
+      registry-0-url:
+        required: true
       registry-0-usr:
         required: true
       registry-0-psw:
@@ -64,27 +66,23 @@ jobs:
         with:
           name: assembled-frontend
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3.6.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.11.1
         id: buildx
         with:
           install: true
 
-      - name: Login to Docker.io
-        uses: docker/login-action@v3.4.0
-        if: ${{ inputs.publish-container }}
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v2
         with:
-          registry: docker.io
+          login-server: ${{ secrets.registry-0-url }}
           username: ${{ secrets.registry-0-usr }}
           password: ${{ secrets.registry-0-psw }}
 
       - name: Set Container Tags
         id: tags
         run: |-
-          IMAGE_NAME="docker.io/dependencytrack/frontend"
+          IMAGE_NAME="${{ secrets.registry-0-url }}/dependencytrack/frontend"
           REF_NAME="${{ inputs.ref-name }}"
           TAGS=""
 
@@ -98,34 +96,25 @@ jobs:
           fi
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
-      - name: Build multi-arch Container Image
-        uses: docker/build-push-action@v6.16.0
-        with:
-          tags: ${{ steps.tags.outputs.tags }}
-          build-args: |-
-            APP_VERSION=${{ inputs.app-version }}
-            COMMIT_SHA=${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ inputs.publish-container }}
-          context: .
-          file: docker/Dockerfile.alpine
 
-      - name: Run Trivy Vulnerability Scanner
-        if: ${{ inputs.publish-container }}
-        uses: aquasecurity/trivy-action@0.30.0
-        env:
-          # https://github.com/aquasecurity/trivy-action/issues/389
-          TRIVY_DB_REPOSITORY: 'public.ecr.aws/aquasecurity/trivy-db:2'
-          TRIVY_JAVA_DB_REPOSITORY: 'public.ecr.aws/aquasecurity/trivy-java-db:1'
-        with:
-          image-ref: docker.io/dependencytrack/frontend:${{ inputs.app-version }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          ignore-unfixed: true
-          vuln-type: 'os'
-
-      - name: Upload Trivy Scan Results to GitHub Security Tab
-        if: ${{ inputs.publish-container }}
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
+      - name: Build multi-arch Container Image with explicit builder
+        run: |
+          docker buildx create --name dbuilder --driver docker-container --use --bootstrap
+          
+          TAGS="${{ steps.tags.outputs.tags }}"
+          TAG_LIST="${TAGS//,/ }"
+          
+          TAG_ARGS=""
+          for tag in $TAG_LIST; do
+            TAG_ARGS="$TAG_ARGS --tag $tag"
+          done
+          
+          docker buildx build \
+            --builder dbuilder \
+            --build-arg APP_VERSION=${{ inputs.app-version }} \
+            --build-arg COMMIT_SHA=${{ github.sha }} \
+            --platform linux/amd64,linux/arm64 \
+            $TAG_ARGS \
+            --push \
+            --file docker/Dockerfile.alpine \
+            .

@@ -19,5 +19,6 @@ jobs:
       publish-container: ${{ github.ref_name == 'master' || startsWith(github.ref_name, 'feature-') }}
       ref-name: ${{ github.ref_name }}
     secrets:
-      registry-0-usr: ${{ secrets.HUB_USERNAME }}
-      registry-0-psw: ${{ secrets.HUB_ACCESS_TOKEN }}
+      registry-0-usr: ${{ secrets.ACR_USERNAME }}
+      registry-0-psw: ${{ secrets.ACR_PASSWORD }}
+      registry-0-url: ${{ vars.ACR_LOGIN_SERVER }}
